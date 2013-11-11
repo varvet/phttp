@@ -1,29 +1,32 @@
-# Phttp
+# PHTTP
 
-TODO: Write a gem description
+This gem makes it easier to compose multiple requests made through a Typhoeus
+hydra by utilizing the idea of promises.
 
 ## Installation
 
-Add this line to your application's Gemfile:
+```
+$ gem install phttp
+```
 
-    gem 'phttp'
+## Example
 
-And then execute:
+```ruby
+require "phttp"
 
-    $ bundle
+result = PHTTP.parallel do |http|
+  cool = http.request("http://example.com/cool").then do |response|
+    response.body.downcase
+  end
 
-Or install it yourself as:
+  cow = http.request("http://example.com/cow").then do |response|
+    response.body.upcase
+  end
 
-    $ gem install phttp
+  http.all(cool, cow).then do |cool, cow|
+    cool + " " + cow + "!"
+  end
+end
 
-## Usage
-
-TODO: Write usage instructions here
-
-## Contributing
-
-1. Fork it
-2. Create your feature branch (`git checkout -b my-new-feature`)
-3. Commit your changes (`git commit -am 'Add some feature'`)
-4. Push to the branch (`git push origin my-new-feature`)
-5. Create new Pull Request
+result.should eq "cool COW!"
+```

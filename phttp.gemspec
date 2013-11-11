@@ -5,7 +5,7 @@ require 'phttp/version'
 
 Gem::Specification.new do |spec|
   spec.name          = "phttp"
-  spec.version       = Phttp::VERSION
+  spec.version       = PHTTP::VERSION
   spec.authors       = ["Kim Burgestrand", "Jonas Nicklas"]
   spec.email         = ["kim@burgestrand.se", "jonas.nicklas@gmail.com"]
   spec.summary       = "Promising Typhoeus HTTP requests."
