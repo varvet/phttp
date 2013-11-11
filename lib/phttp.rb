@@ -4,59 +4,6 @@ require "delegate"
 require "json"
 
 module PHTTP
-  # class Response < SimpleDelegator
-  #   def response_json
-  #     JSON.parse(response_body)
-  #   end
-
-  #   alias_method :json, :response_json
-  # end
-
-  # module Completeable
-  #   def complete(result)
-  #     if result.is_a?(Completeable)
-  #       result.on_complete { |result| complete(result) }
-  #     else
-  #       @response = if @on_complete
-  #         @on_complete.call(result)
-  #       else
-  #         result
-  #       end
-  #     end
-  #   end
-
-  #   def on_complete(&block)
-  #     @on_complete = block
-  #   end
-
-  #   attr_reader :response
-  # end
-
-  # class MultipleRequests
-  #   include Completeable
-
-  #   def initialize(requests, &block)
-  #     @results = Array.new(requests.length)
-
-  #     total = @results.length
-  #     completed = 0
-
-  #     requests.each_with_index do |request, index|
-  #       request.on_complete do |response|
-  #         @results[index] = response
-  #         completed += 1
-  #         complete(response) if completed == total
-  #       end
-  #     end
-
-  #     on_complete(&block)
-  #   end
-
-  #   def response
-  #     @results
-  #   end
-  # end
-
   class Promise
     def initialize(&on_fulfill)
       @promises = []

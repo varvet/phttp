@@ -74,4 +74,27 @@ describe PHTTP do
 
     result.should eq "cool COW!"
   end
+
+  it "can do parallell nested promises" do
+    Typhoeus.stub("http://example.com/cool").and_return(Typhoeus::Response.new(body: "bowl"))
+    Typhoeus.stub("http://example.com/bowl/a").and_return(Typhoeus::Response.new(body: "monkey"))
+    Typhoeus.stub("http://example.com/bowl/b").and_return(Typhoeus::Response.new(body: "llama"))
+    Typhoeus.stub("http://example.com/cow").and_return(Typhoeus::Response.new(body: "cow"))
+
+    result = PHTTP.parallel do |http|
+      a = http.request("http://example.com/cool").then do |response|
+        x = http.request("http://example.com/#{response.body}/a").then { |res| res.body }
+        y = http.request("http://example.com/#{response.body}/b").then { |res| res.body }
+        http.all(x, y)
+      end
+
+      b = http.request("http://example.com/cow").then { |res| res.body }
+
+      http.all(a, b).then do |(xa, xb), y|
+        [xa, xb, y].join(", ")
+      end
+    end
+
+    result.should eq "monkey, llama, cow"
+  end
 end
