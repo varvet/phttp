@@ -4,6 +4,10 @@ require "pry"
 Typhoeus::Config.block_connection = true
 
 describe PHTTP do
+  before do
+    Typhoeus::Expectation.clear
+  end
+
   it "returns the value from the promise returned from the block" do
     mock_response = Typhoeus::Response.new(body: "something cool")
     Typhoeus.stub("http://example.com/").and_return(mock_response)
@@ -96,5 +100,62 @@ describe PHTTP do
     end
 
     result.should eq "monkey, llama, cow"
+  end
+
+  it "can manually block reactor" do
+    Typhoeus.stub("http://example.com/x").and_return(Typhoeus::Response.new(body: "X"))
+    Typhoeus.stub("http://example.com/z").and_return(Typhoeus::Response.new(body: "Z"))
+    Typhoeus.stub("http://example.com/X/Z").and_return(Typhoeus::Response.new(body: "monkey"))
+
+    result = PHTTP.parallel do |http|
+      a = http.request("http://example.com/x").then
+      b = http.request("http://example.com/z").then
+
+      http.run
+
+      http.request("http://example.com/#{a.value.body}/#{b.value.body}").then do |response|
+        response.body
+      end
+    end
+
+    result.should eq "monkey"
+  end
+
+  it "can run a single request" do
+    Typhoeus.stub("http://example.com/x").and_return(Typhoeus::Response.new(body: "X"))
+
+    result = PHTTP.parallel do |http|
+      a = http.request("http://example.com/x")
+
+      value = a.run
+
+      value.body
+    end
+
+    result.should eq "X"
+  end
+
+  it "can run a single request with response transformers" do
+    Typhoeus.stub("http://example.com/x").and_return(Typhoeus::Response.new(body: "monkey"))
+
+    result = PHTTP.parallel do |http|
+      a = http.request("http://example.com/x").then { |res| res.body.upcase }
+      a.run + " boo"
+    end
+
+    result.should eq "MONKEY boo"
+  end
+
+  it "can compose promises which are already fulfilled" do
+    Typhoeus.stub("http://example.com/x").and_return(Typhoeus::Response.new(body: "monkey"))
+
+    result = PHTTP.parallel do |http|
+      a = http.request("http://example.com/x").then
+      http.run
+      a.value.should be_an_instance_of(Typhoeus::Response)
+      a.then { |res| res.body.upcase }
+    end
+
+    result.should eq "MONKEY"
   end
 end

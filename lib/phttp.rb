@@ -5,7 +5,8 @@ require "json"
 
 module PHTTP
   class Promise
-    def initialize(&on_fulfill)
+    def initialize(parent, &on_fulfill)
+      @parent = parent
       @promises = []
       @on_fulfill = on_fulfill
     end
@@ -13,7 +14,7 @@ module PHTTP
     attr_reader :value
 
     def fulfill(value)
-      raise "can't fulfill promise twice" if defined?(@value)
+      return if defined?(@value)
 
       value = @on_fulfill.call(value) if @on_fulfill
 
@@ -37,37 +38,77 @@ module PHTTP
     end
 
     def then(&block)
-      promise = Promise.new(&block)
+      promise = Promise.new(self, &block)
       @promises << promise
+      promise.fulfill(@value) if defined?(@value)
       promise
+    end
+
+    def run
+      if @on_fulfill
+        @on_fulfill.call(@parent.run)
+      else
+        @parent.run
+      end
     end
   end
 
-  class Foundation
+  class HTTPPromise < Promise
+    def initialize(reactor, request)
+      super(nil, &nil)
+      @reactor = reactor
+      @request = request
+      @queued = false
+    end
+
+    def then(&block)
+      unless @queued
+        @queued = true
+        @request.on_complete { |response| fulfill(response) }
+        @reactor.queue(@request)
+      end
+      super(&block)
+    end
+
+    def run
+      @_run ||= @request.run
+    end
+  end
+
+  class Reactor
     attr_reader :hydra
 
     def initialize(hydra = Typhoeus::Hydra.new)
       @hydra = hydra
+      @value = yield self
+
+      if @value.is_a?(Promise)
+        @value.then
+      end
     end
 
     def run
-      promise = yield self
       hydra.run
-      promise.value
+    end
+
+    def value
+      if @value.is_a?(Promise)
+        @value.value
+      else
+        @value
+      end
+    end
+
+    def queue(request)
+      hydra.queue(request)
     end
 
     def request(url, options = {})
-      promise = Promise.new
-
-      request = Typhoeus::Request.new(url, options)
-      request.on_complete { |response| promise.fulfill(response) }
-      hydra.queue request
-
-      promise
+      HTTPPromise.new(self, Typhoeus::Request.new(url, options))
     end
 
     def all(*promises)
-      promise = Promise.new
+      promise = Promise.new(hydra)
       results = Array.new(promises.length)
       completed = 0
 
@@ -87,7 +128,8 @@ module PHTTP
   end
 
   def self.parallel(&block)
-    root = Foundation.new
-    root.run(&block)
+    reactor = Reactor.new(&block)
+    reactor.run
+    reactor.value
   end
 end
