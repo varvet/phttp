@@ -4,66 +4,88 @@ require "delegate"
 require "json"
 
 module PHTTP
-  module Completeable
-    def complete(result)
-      if result.is_a?(Completeable)
-        result.on_complete { |result| complete(result) }
+  # class Response < SimpleDelegator
+  #   def response_json
+  #     JSON.parse(response_body)
+  #   end
+
+  #   alias_method :json, :response_json
+  # end
+
+  # module Completeable
+  #   def complete(result)
+  #     if result.is_a?(Completeable)
+  #       result.on_complete { |result| complete(result) }
+  #     else
+  #       @response = if @on_complete
+  #         @on_complete.call(result)
+  #       else
+  #         result
+  #       end
+  #     end
+  #   end
+
+  #   def on_complete(&block)
+  #     @on_complete = block
+  #   end
+
+  #   attr_reader :response
+  # end
+
+  # class MultipleRequests
+  #   include Completeable
+
+  #   def initialize(requests, &block)
+  #     @results = Array.new(requests.length)
+
+  #     total = @results.length
+  #     completed = 0
+
+  #     requests.each_with_index do |request, index|
+  #       request.on_complete do |response|
+  #         @results[index] = response
+  #         completed += 1
+  #         complete(response) if completed == total
+  #       end
+  #     end
+
+  #     on_complete(&block)
+  #   end
+
+  #   def response
+  #     @results
+  #   end
+  # end
+
+  class Promise
+    def initialize(&on_fulfill)
+      @promises = []
+      @on_fulfill = on_fulfill
+    end
+
+    attr_reader :value
+
+    def fulfill(value)
+      raise "can't fulfill promise twice" if defined?(@value)
+
+      @value = if @on_fulfill
+        @on_fulfill.call(value)
       else
-        @on_complete.call(result) if @on_complete
-      end
-    end
-
-    def on_complete(&block)
-      @on_complete = block
-    end
-  end
-
-  class MultipleRequests
-    include Completeable
-
-    def initialize(requests, &block)
-      @results = Array.new(requests.length)
-
-      total = @results.length
-      completed = 0
-
-      requests.each_with_index do |request, index|
-        request.on_complete do |response|
-          @results[index] = response
-          completed += 1
-          complete(response) if completed == total
-        end
+        value
       end
 
-      on_complete(&block)
+      @promises.each do |promise|
+        promise.fulfill(@value)
+      end
+
+      @value
     end
 
-    def response
-      @results
+    def then(&block)
+      promise = Promise.new(&block)
+      @promises << promise
+      promise
     end
-  end
-
-  class Request < SimpleDelegator
-    include Completeable
-
-    def initialize(*args)
-      request = Typhoeus::Request.new(*args)
-      request.on_complete do |response|
-        response = Response.new(response)
-        result = yield response
-        complete(result)
-      end if block_given?
-
-      super request
-    end
-  end
-
-  class Response < SimpleDelegator
-    def response_json
-      JSON.parse(response_body)
-    end
-
-    alias_method :json, :response_json
   end
 
   class Foundation
@@ -74,20 +96,24 @@ module PHTTP
     end
 
     def run
-      request = yield self
+      promise = yield self
       hydra.run
-      request.response
+      promise.value
     end
 
-    def request(url, options = {}, &block)
-      request = Request.new(url, options, &block)
+    def request(url, options = {})
+      promise = Promise.new
+
+      request = Typhoeus::Request.new(url, options)
+      request.on_complete { |response| promise.fulfill(response) }
       hydra.queue request
-      request
+
+      promise
     end
 
-    def all(*requests, &block)
-      MultipleRequests.new(requests, &block)
-    end
+    # def all(*requests, &block)
+    #   MultipleRequests.new(requests, &block)
+    # end
   end
 
   def self.parallel(&block)

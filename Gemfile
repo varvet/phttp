@@ -1,4 +1,4 @@
 source 'https://rubygems.org'
 
-# Specify your gem's dependencies in phttp.gemspec
 gemspec
+gem "pry"
