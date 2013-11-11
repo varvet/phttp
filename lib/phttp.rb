@@ -68,17 +68,25 @@ module PHTTP
     def fulfill(value)
       raise "can't fulfill promise twice" if defined?(@value)
 
-      @value = if @on_fulfill
-        @on_fulfill.call(value)
+      value = @on_fulfill.call(value) if @on_fulfill
+
+      if value.is_a?(Promise)
+        value.then do |value|
+          @value = value
+
+          @promises.each do |promise|
+            promise.fulfill(@value)
+          end
+        end
       else
-        value
+        @value = value
+
+        @promises.each do |promise|
+          promise.fulfill(@value)
+        end
       end
 
-      @promises.each do |promise|
-        promise.fulfill(@value)
-      end
-
-      @value
+      nil
     end
 
     def then(&block)
@@ -111,9 +119,24 @@ module PHTTP
       promise
     end
 
-    # def all(*requests, &block)
-    #   MultipleRequests.new(requests, &block)
-    # end
+    def all(*promises)
+      promise = Promise.new
+      results = Array.new(promises.length)
+      completed = 0
+
+      promises.each_with_index do |request, index|
+        request.then do |response|
+          results[index] = response
+          completed += 1
+
+          if completed == results.length
+            promise.fulfill(results)
+          end
+        end
+      end
+
+      promise
+    end
   end
 
   def self.parallel(&block)
