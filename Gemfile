@@ -1,4 +1,4 @@
-source "https://rubygems.org"
+source 'https://rubygems.org'
 
-gem "typhoeus"
-gem "pry"
+# Specify your gem's dependencies in phttp.gemspec
+gemspec
