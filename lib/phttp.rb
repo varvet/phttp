@@ -124,7 +124,7 @@ module PHTTP
 
   class << self
     def all(*requests)
-      CompoundRequest.new(requests)
+      CompoundRequest.new(requests.flatten)
     end
   end
 end
