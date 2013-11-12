@@ -102,6 +102,7 @@ module PHTTP
 
     def queue(hydra)
       super
+      fulfill([]) if @requests.empty?
       @requests.each do |request|
         request.queue(hydra)
       end

@@ -146,4 +146,12 @@ describe PHTTP do
 
     result.run.should eq "monkeyllama"
   end
+
+  it "resolves a empty all to an empty array" do
+    stub_request("http://example.com/0", "monkey")
+
+    result = PHTTP.all.then { |x| PHTTP::Request.new("http://example.com/#{x.length}") }.then { |res| res.body }
+
+    result.run.should eq "monkey"
+  end
 end
