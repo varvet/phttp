@@ -4,7 +4,7 @@ require "delegate"
 require "json"
 
 module PHTTP
-  class Promise
+  module Promise
     def initialize(&on_fulfill)
       @promises = []
       @on_fulfill = on_fulfill
@@ -25,8 +25,7 @@ module PHTTP
         end
       end
 
-      if value.is_a?(Promise) or value.is_a?(Filter::Thenable)
-        value.queue(@hydra)
+      if value.is_a?(Promise)
         value.then(&finish)
       else
         finish[value]
@@ -36,54 +35,49 @@ module PHTTP
     end
 
     def queue(hydra)
-      @hydra = hydra
+      original = @on_fulfill
+      @on_fulfill = lambda do |value|
+        value = original[value] if original
+        value.queue(hydra) if value.is_a?(Promise)
+        value
+      end
     end
 
     def then(&block)
-      promise = Promise.new(&block)
+      promise = Filter.new(self, &block)
       @promises << promise
       promise.fulfill(@value) if defined?(@value)
       promise
     end
-  end
-
-  class Filter
-    module Thenable
-      def then(&block)
-        Filter.new(self, @promise.then(&block))
-      end
-
-      def value
-        @promise.value
-      end
-    end
-
-    include Filter::Thenable
-
-    def initialize(parent, promise)
-      @parent = parent
-      @promise = promise
-    end
-
-    def queue(hydra)
-      @promise.queue(hydra)
-      @parent.queue(hydra)
-    end
 
     def run(*args)
       hydra = Typhoeus::Hydra.new(*args)
-      @promise.queue(hydra)
-      @parent.queue(hydra)
+      queue(hydra)
       hydra.run
       value
     end
   end
 
+  class Filter
+    include Promise
+
+    def initialize(parent, &on_fulfill)
+      @parent = parent
+      super(&on_fulfill)
+    end
+
+    def queue(hydra)
+      super
+      @parent.queue(hydra)
+    end
+  end
+
   class CompoundRequest
-    include Filter::Thenable
+    include Promise
 
     def initialize(requests)
-      @promise = Promise.new
+      super(&nil)
+
       @requests = requests
 
       results = Array.new(@requests.length)
@@ -94,50 +88,39 @@ module PHTTP
           results[index] = response
           completed += 1
 
-          @promise.fulfill(results) if completed == results.length
+          fulfill(results) if completed == results.length
         end
       end
     end
 
     def queue(hydra)
-      @promise.queue(hydra)
+      super
       @requests.each do |request|
         request.queue(hydra)
       end
     end
-
-    def run(*args)
-      hydra = Typhoeus::Hydra.new(*args)
-      @promise.queue(hydra)
-      @requests.each { |request| request.queue(hydra) }
-      hydra.run
-      value
-    end
   end
 
   class Request < SimpleDelegator
-    include Filter::Thenable
+    include Promise
 
-    def initialize(*args, &block)
-      @request = Typhoeus::Request.new(*args, &block)
-      super(@request)
+    def initialize(*args)
+      super(&nil)
 
-      @promise = Promise.new
+      @request = Typhoeus::Request.new(*args)
+
       @request.on_complete do |response|
-        @promise.fulfill(response)
+        fulfill(response)
       end
     end
 
-    def run(*args)
-      hydra = Typhoeus::Hydra.new(*args)
-      @promise.queue(hydra)
-      queue(hydra)
-      hydra.run
-      value
+    def queue(hydra)
+      super
+      hydra.queue(@request) unless hydra.queued_requests.include?(@request)
     end
 
-    def queue(hydra)
-      hydra.queue(@request)
+    def __getobj__
+      @request
     end
   end
 

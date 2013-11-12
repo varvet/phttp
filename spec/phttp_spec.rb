@@ -8,17 +8,25 @@ describe PHTTP do
     Typhoeus::Expectation.clear
   end
 
+  def stub_request(url, response_body)
+    response = Typhoeus::Response.new(body: response_body)
+    stub = Typhoeus.stub(url)
+    stub.and_return(response)
+    stub.and_return do |request|
+      raise "can't be called more than once"
+    end
+    stub
+  end
+
   it "returns the value from the promise returned from the block" do
-    mock_response = Typhoeus::Response.new(body: "something cool")
-    Typhoeus.stub("http://example.com/").and_return(mock_response)
+    stub_request("http://example.com/", "something cool")
 
     result = PHTTP::Request.new("http://example.com/").run
-    result.should eq mock_response
+    result.body.should eq "something cool"
   end
 
   it "can chain a promise" do
-    mock_response = Typhoeus::Response.new(body: "something cool")
-    Typhoeus.stub("http://example.com/").and_return(mock_response)
+    stub_request("http://example.com/", "something cool")
 
     request = PHTTP::Request.new("http://example.com/").then do |response|
       response.body.upcase
@@ -28,14 +36,9 @@ describe PHTTP do
   end
 
   it "can chain multiple promises" do
-    mock_response = Typhoeus::Response.new(body: "cool")
-    Typhoeus.stub("http://example.com/").and_return(mock_response)
-
-    mock_response = Typhoeus::Response.new(body: "cow")
-    Typhoeus.stub("http://example.com/cool").and_return(mock_response)
-
-    mock_response = Typhoeus::Response.new(body: "something else")
-    Typhoeus.stub("http://example.com/cow").and_return(mock_response)
+    stub_request("http://example.com/", "cool")
+    stub_request("http://example.com/cool", "cow")
+    stub_request("http://example.com/cow", "something else")
 
     request = PHTTP::Request.new("http://example.com/").then do |response|
       PHTTP::Request.new("http://example.com/#{response.body}").then do |response|
@@ -49,9 +52,9 @@ describe PHTTP do
   end
 
   it "can run fork requests" do
-    Typhoeus.stub("http://example.com/").and_return(Typhoeus::Response.new(body: "bowl cool"))
-    Typhoeus.stub("http://example.com/cool").and_return(Typhoeus::Response.new(body: "cool"))
-    Typhoeus.stub("http://example.com/bowl").and_return(Typhoeus::Response.new(body: "bowl"))
+    stub_request("http://example.com/", "bowl cool")
+    stub_request("http://example.com/cool", "cool")
+    stub_request("http://example.com/bowl", "bowl")
 
     request = PHTTP::Request.new("http://example.com/")
 
@@ -73,11 +76,8 @@ describe PHTTP do
   end
 
   it "can do parallell promises" do
-    mock_response = Typhoeus::Response.new(body: "COOL")
-    Typhoeus.stub("http://example.com/cool").and_return(mock_response)
-
-    mock_response = Typhoeus::Response.new(body: "cow")
-    Typhoeus.stub("http://example.com/cow").and_return(mock_response)
+    stub_request("http://example.com/cool", "COOL")
+    stub_request("http://example.com/cow", "cow")
 
     a = PHTTP::Request.new("http://example.com/cool").then do |response|
       response.body.downcase
@@ -95,10 +95,10 @@ describe PHTTP do
   end
 
   it "can do parallell nested promises" do
-    Typhoeus.stub("http://example.com/cool").and_return(Typhoeus::Response.new(body: "bowl"))
-    Typhoeus.stub("http://example.com/bowl/a").and_return(Typhoeus::Response.new(body: "monkey"))
-    Typhoeus.stub("http://example.com/bowl/b").and_return(Typhoeus::Response.new(body: "llama"))
-    Typhoeus.stub("http://example.com/cow").and_return(Typhoeus::Response.new(body: "cow"))
+    stub_request("http://example.com/cool", "bowl")
+    stub_request("http://example.com/bowl/a", "monkey")
+    stub_request("http://example.com/bowl/b", "llama")
+    stub_request("http://example.com/cow", "cow")
 
     a = PHTTP::Request.new("http://example.com/cool").then do |response|
       x = PHTTP::Request.new("http://example.com/#{response.body}/a").then { |res| res.body }
@@ -116,16 +116,13 @@ describe PHTTP do
   end
 
   it "can compose promises which are already fulfilled" do
-    Typhoeus.stub("http://example.com/x").and_return(Typhoeus::Response.new(body: "monkey"))
+    stub_request("http://example.com/x", "monkey")
 
     a = PHTTP::Request.new("http://example.com/x")
     a.run
     a.value.should be_an_instance_of(Typhoeus::Response)
 
     promise = a.then { |res| res.body.upcase }
-    Typhoeus.stub("http://example.com/x").and_return(Typhoeus::Response.new(body: "something else"))
-    promise.run
-
     promise.value.should eq "MONKEY"
   end
 end
