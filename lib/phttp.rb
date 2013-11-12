@@ -101,7 +101,7 @@ module PHTTP
     end
   end
 
-  class Request < SimpleDelegator
+  class Request
     include Promise
 
     def initialize(*args)
@@ -114,13 +114,11 @@ module PHTTP
       end
     end
 
+    attr_reader :request
+
     def queue(hydra)
       super
-      hydra.queue(@request) unless hydra.queued_requests.include?(@request)
-    end
-
-    def __getobj__
-      @request
+      hydra.queue(request) unless hydra.queued_requests.include?(request)
     end
   end
 
