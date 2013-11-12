@@ -125,4 +125,25 @@ describe PHTTP do
     promise = a.then { |res| res.body.upcase }
     promise.value.should eq "MONKEY"
   end
+
+  it "has promises for primitive values" do
+    seven = PHTTP.of(5).then do |response|
+      response + 2
+    end
+
+    seven.run.should eq 7
+  end
+
+  it "can compose primitive and non primitive promises" do
+    stub_request("http://example.com/x", "monkey")
+
+    result = PHTTP.of("x").then do |x|
+      a = PHTTP::Request.new("http://example.com/#{x}").then { |res| res.body }
+      PHTTP.all(a, PHTTP.of("llama"))
+    end.then do |x, y|
+      x + y
+    end
+
+    result.run.should eq "monkeyllama"
+  end
 end

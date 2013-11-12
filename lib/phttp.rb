@@ -4,7 +4,7 @@ require "delegate"
 require "json"
 
 module PHTTP
-  module Promise
+  class Promise
     def initialize(&on_fulfill)
       @promises = []
       @on_fulfill = on_fulfill
@@ -58,9 +58,7 @@ module PHTTP
     end
   end
 
-  class Filter
-    include Promise
-
+  class Filter < Promise
     def initialize(parent, &on_fulfill)
       @parent = parent
       super(&on_fulfill)
@@ -72,9 +70,18 @@ module PHTTP
     end
   end
 
-  class CompoundRequest
-    include Promise
+  class Primitive < Promise
+    def initialize(value)
+      @primitive = value
+      super(&nil)
+    end
 
+    def queue(hydra)
+      fulfill(@primitive)
+    end
+  end
+
+  class CompoundRequest < Promise
     def initialize(requests)
       super(&nil)
 
@@ -101,9 +108,7 @@ module PHTTP
     end
   end
 
-  class Request
-    include Promise
-
+  class Request < Promise
     def initialize(*args)
       super(&nil)
 
@@ -125,6 +130,10 @@ module PHTTP
   class << self
     def all(*requests)
       CompoundRequest.new(requests.flatten)
+    end
+
+    def of(value)
+      Primitive.new(value)
     end
   end
 end
