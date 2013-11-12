@@ -5,8 +5,7 @@ require "json"
 
 module PHTTP
   class Promise
-    def initialize(parent, &on_fulfill)
-      @parent = parent
+    def initialize(&on_fulfill)
       @promises = []
       @on_fulfill = on_fulfill
     end
@@ -18,15 +17,7 @@ module PHTTP
 
       value = @on_fulfill.call(value) if @on_fulfill
 
-      if value.is_a?(Promise)
-        value.then do |value|
-          @value = value
-
-          @promises.each do |promise|
-            promise.fulfill(@value)
-          end
-        end
-      else
+      finish = lambda do |value|
         @value = value
 
         @promises.each do |promise|
@@ -34,102 +25,125 @@ module PHTTP
         end
       end
 
+      if value.is_a?(Promise) or value.is_a?(Filter::Thenable)
+        value.queue(@hydra)
+        value.then(&finish)
+      else
+        finish[value]
+      end
+
       nil
     end
 
+    def queue(hydra)
+      @hydra = hydra
+    end
+
     def then(&block)
-      promise = Promise.new(self, &block)
+      promise = Promise.new(&block)
       @promises << promise
       promise.fulfill(@value) if defined?(@value)
       promise
     end
-
-    def run
-      if @on_fulfill
-        @on_fulfill.call(@parent.run)
-      else
-        @parent.run
-      end
-    end
   end
 
-  class HTTPPromise < Promise
-    def initialize(reactor, request)
-      super(nil, &nil)
-      @reactor = reactor
-      @request = request
-      @queued = false
-    end
-
-    def then(&block)
-      unless @queued
-        @queued = true
-        @request.on_complete { |response| fulfill(response) }
-        @reactor.queue(@request)
+  class Filter
+    module Thenable
+      def then(&block)
+        Filter.new(self, @promise.then(&block))
       end
-      super(&block)
-    end
 
-    def run
-      @_run ||= @request.run
-    end
-  end
-
-  class Reactor
-    attr_reader :hydra
-
-    def initialize(hydra = Typhoeus::Hydra.new)
-      @hydra = hydra
-      @value = yield self
-
-      if @value.is_a?(Promise)
-        @value.then
+      def value
+        @promise.value
       end
     end
 
-    def run
+    include Filter::Thenable
+
+    def initialize(parent, promise)
+      @parent = parent
+      @promise = promise
+    end
+
+    def queue(hydra)
+      @promise.queue(hydra)
+      @parent.queue(hydra)
+    end
+
+    def run(*args)
+      hydra = Typhoeus::Hydra.new(*args)
+      @promise.queue(hydra)
+      @parent.queue(hydra)
       hydra.run
+      value
     end
+  end
 
-    def value
-      if @value.is_a?(Promise)
-        @value.value
-      else
-        @value
-      end
-    end
+  class CompoundRequest
+    include Filter::Thenable
 
-    def queue(request)
-      hydra.queue(request)
-    end
+    def initialize(requests)
+      @promise = Promise.new
+      @requests = requests
 
-    def request(url, options = {})
-      HTTPPromise.new(self, Typhoeus::Request.new(url, options))
-    end
-
-    def all(*promises)
-      promise = Promise.new(hydra)
-      results = Array.new(promises.length)
+      results = Array.new(@requests.length)
       completed = 0
 
-      promises.each_with_index do |request, index|
+      @requests.each_with_index do |request, index|
         request.then do |response|
           results[index] = response
           completed += 1
 
-          if completed == results.length
-            promise.fulfill(results)
-          end
+          @promise.fulfill(results) if completed == results.length
         end
       end
+    end
 
-      promise
+    def queue(hydra)
+      @promise.queue(hydra)
+      @requests.each do |request|
+        request.queue(hydra)
+      end
+    end
+
+    def run(*args)
+      hydra = Typhoeus::Hydra.new(*args)
+      @promise.queue(hydra)
+      @requests.each { |request| request.queue(hydra) }
+      hydra.run
+      value
     end
   end
 
-  def self.parallel(&block)
-    reactor = Reactor.new(&block)
-    reactor.run
-    reactor.value
+  class Request < SimpleDelegator
+    include Filter::Thenable
+
+    def initialize(*args, &block)
+      @request = Typhoeus::Request.new(*args, &block)
+      super(@request)
+
+      @promise = Promise.new
+      @request.on_complete do |response|
+        @promise.fulfill(response)
+      end
+    end
+
+    def run(*args)
+      hydra = Typhoeus::Hydra.new(*args)
+      @promise.queue(hydra)
+      queue(hydra)
+      hydra.run
+      value
+    end
+
+    def queue(hydra)
+      hydra.queue(@request)
+    end
+  end
+
+  class << self
+    def all(*requests)
+      CompoundRequest.new(requests)
+    end
   end
 end
