@@ -42,15 +42,11 @@ module PHTTP
     end
 
     def request(verb, uri, options = {})
-      response = yield client.request(verb, uri, options)
-    end
-
-    private
-
-    def client
-      HTTP::Client.new(options.merge({
+      new_client = HTTP::Client.new(options.merge({
         socket_class: PHTTP::TCPSocket,
       }))
+
+      response = yield new_client.request(verb, uri, options)
     end
   end
 end
