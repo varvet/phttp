@@ -2,16 +2,16 @@ module PHTTP
   class TCPSocket
     extend Forwardable
 
-    def self.open(*args)
+    class << self
+      alias_method :open, :new
+    end
+
+    def initialize(remote_host, remote_port)
       if block_given?
         raise ArgumentError, "block form is not supported"
       end
 
-      new(*args)
-    end
-
-    def initialize(*args)
-      @io = ::TCPSocket.open(*args)
+      @io = ::TCPSocket.open(remote_host, remote_port)
     end
 
     # HTTP::Client
