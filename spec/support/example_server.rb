@@ -6,15 +6,21 @@ module HTTPMocks
   class MockServer
     def initialize
       q = Queue.new
-      @thread = Thread.new do
+      @thread = Thread.new(self) do |mock|
+        app = lambda do |env|
+          response = mock.call(env)
+          response = [200, {}, [response]] if response.is_a?(String)
+          response
+        end
+
         options = { Logger: Logger.new(File::NULL), AccessLog: File::NULL }
-        Rack::Handler::WEBrick.run(self, options) { |s| q << s }
+        Rack::Handler::WEBrick.run(app, options) { |s| q << s }
       end
       @server = q.pop
     end
 
     def call(env)
-      [204, {}, [""]]
+      ""
     end
 
     def [](path)
