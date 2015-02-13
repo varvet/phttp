@@ -1,8 +1,7 @@
 require "phttp"
 require "pry"
-require "webmock/rspec"
 
-WebMock.disable_net_connect!
+require_relative "support/example_server"
 
 # See http://rubydoc.info/gems/rspec-core/RSpec/Core/Configuration
 RSpec.configure do |config|

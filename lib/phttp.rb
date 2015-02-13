@@ -2,16 +2,10 @@ require "http.rb"
 require "nio"
 
 module PHTTP
-  class Socket
-    def open(*args)
-      TCPSocket.open(*args)
-    end
-  end
-
   class Client
     def initialize(options)
       @client = HTTP::Client.new(options.merge({
-        socket_class: PHTTP::Socket.new,
+        socket_class: ::TCPSocket,
       }))
     end
 

@@ -19,7 +19,7 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "http"
   spec.add_dependency "nio4r"
-  spec.add_development_dependency "webmock"
+  spec.add_development_dependency "rack"
   spec.add_development_dependency "rspec", "~> 3.0"
   spec.add_development_dependency "bundler"
   spec.add_development_dependency "rake"
