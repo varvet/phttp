@@ -6,11 +6,19 @@ require "phttp/tree"
 require "phttp/version"
 
 module PHTTP
-  def self.run(client)
-    client.call
+  class Scheduler
+    def initialize(tree)
+      @tree = tree
+    end
+
+    def run
+      @tree.call
+    end
   end
 end
 
 def PHTTP(options = {}, &block)
-  PHTTP.run(PHTTP::Tree.new(options, &block))
+  tree = PHTTP::Tree.new(options, &block)
+  scheduler = PHTTP::Scheduler.new(tree)
+  scheduler.run
 end
