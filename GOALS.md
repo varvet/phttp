@@ -1,0 +1,3 @@
+- Not depentent on libcurl.
+- Not dependent on C extensions.
+- Not dependent on threading.

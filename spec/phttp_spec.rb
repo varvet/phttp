@@ -1,157 +1,52 @@
-require "phttp"
-require "pry"
+RSpec.describe PHTTP do
+  it "can run a single simple request" do
+    stub_request(:get, "https://example.com")
+      .to_return(body: "something cool")
 
-Typhoeus::Config.block_connection = true
+    response = PHTTP { |http| http.get("https://example.com").to_s }
 
-describe PHTTP do
-  before do
-    Typhoeus::Expectation.clear
+    expect(response).to eq "something cool"
   end
 
-  def stub_request(url, response_body)
-    response = Typhoeus::Response.new(body: response_body)
-    stub = Typhoeus.stub(url)
-    stub.and_return(response)
-    stub.and_return do |request|
-      raise "can't be called more than once"
-    end
-    stub
-  end
+  it "can run parallel requests" do
+    stub_request(:get, "https://example.com")
+      .to_return(body: "something cool")
+      .to_return(body: "something else")
 
-  it "returns the value from the promise returned from the block" do
-    stub_request("http://example.com/", "something cool")
-
-    result = PHTTP::Request.new("http://example.com/").run
-    result.body.should eq "something cool"
-  end
-
-  it "can chain a promise" do
-    stub_request("http://example.com/", "something cool")
-
-    request = PHTTP::Request.new("http://example.com/").then do |response|
-      response.body.upcase
+    response = PHTTP do |http|
+      responseA = http.get("https://example.com")
+      responseB = http.get("https://example.com")
+      [responseA.to_s, "and", responseB.to_s].join(" ")
     end
 
-    request.run.should eq "SOMETHING COOL"
+    expect(response).to eq "something cool and something else"
   end
 
-  it "can chain multiple promises" do
-    stub_request("http://example.com/", "cool")
-    stub_request("http://example.com/cool", "cow")
-    stub_request("http://example.com/cow", "something else")
+  it "can run compound requests" do
+    stub_request(:get, "https://example.com").to_return(body: "https://example.com/next")
+    stub_request(:get, "https://example.com/next").to_return(body: "something cool")
 
-    request = PHTTP::Request.new("http://example.com/").then do |response|
-      PHTTP::Request.new("http://example.com/#{response.body}").then do |response|
-        PHTTP::Request.new("http://example.com/#{response.body}").then do |response|
-          response.body.upcase
-        end
+    response = PHTTP do |http|
+      http.get("https://example.com") do |response|
+        http.get(response).to_s
       end
     end
 
-    request.run.should eq "SOMETHING ELSE"
+    expect(response).to eq "something cool"
   end
 
-  it "can run fork requests" do
-    stub_request("http://example.com/", "bowl cool")
-    stub_request("http://example.com/cool", "cool")
-    stub_request("http://example.com/bowl", "bowl")
+  it "can run multiple parallel requests" do
+    stub_request(:get, "https://example.com/a").to_return(body: "https://example.com/1")
+    stub_request(:get, "https://example.com/b").to_return(body: "https://example.com/2")
+    stub_request(:get, "https://example.com/1").to_return(body: "1")
+    stub_request(:get, "https://example.com/2").to_return(body: "2")
 
-    request = PHTTP::Request.new("http://example.com/")
-
-    requestA = request.then do |response|
-      bowl, cool = response.body.split(" ")
-      PHTTP::Request.new("http://example.com/#{bowl}").then do |response|
-        response.body.upcase
-      end
+    response = PHTTP do |http|
+      one = http.get("https://example.com/a") { |response| http.get(response).to_s }
+      two = http.get("https://example.com/b") { |response| http.get(response).to_s }
+      [one, two]
     end
 
-    requestB = request.then do |response|
-      bowl, cool = response.body.split(" ")
-      PHTTP::Request.new("http://example.com/#{cool}").then do |response|
-        response.body.upcase
-      end
-    end
-
-    PHTTP.all(requestA, requestB).run.should eq ["BOWL", "COOL"]
-  end
-
-  it "can do parallell promises" do
-    stub_request("http://example.com/cool", "COOL")
-    stub_request("http://example.com/cow", "cow")
-
-    a = PHTTP::Request.new("http://example.com/cool").then do |response|
-      response.body.downcase
-    end
-
-    b = PHTTP::Request.new("http://example.com/cow").then do |response|
-      response.body.upcase
-    end
-
-    request = PHTTP.all(a, b).then do |x, y|
-      x + " " + y + "!"
-    end
-
-    request.run.should eq "cool COW!"
-  end
-
-  it "can do parallell nested promises" do
-    stub_request("http://example.com/cool", "bowl")
-    stub_request("http://example.com/bowl/a", "monkey")
-    stub_request("http://example.com/bowl/b", "llama")
-    stub_request("http://example.com/cow", "cow")
-
-    a = PHTTP::Request.new("http://example.com/cool").then do |response|
-      x = PHTTP::Request.new("http://example.com/#{response.body}/a").then { |res| res.body }
-      y = PHTTP::Request.new("http://example.com/#{response.body}/b").then { |res| res.body }
-      PHTTP.all(x, y)
-    end
-
-    b = PHTTP::Request.new("http://example.com/cow").then { |res| res.body }
-
-    request = PHTTP.all(a, b).then do |(xa, xb), y|
-      [xa, xb, y].join(", ")
-    end
-
-    request.run.should eq "monkey, llama, cow"
-  end
-
-  it "can compose promises which are already fulfilled" do
-    stub_request("http://example.com/x", "monkey")
-
-    a = PHTTP::Request.new("http://example.com/x")
-    a.run
-    a.value.should be_an_instance_of(Typhoeus::Response)
-
-    promise = a.then { |res| res.body.upcase }
-    promise.value.should eq "MONKEY"
-  end
-
-  it "has promises for primitive values" do
-    seven = PHTTP.of(5).then do |response|
-      response + 2
-    end
-
-    seven.run.should eq 7
-  end
-
-  it "can compose primitive and non primitive promises" do
-    stub_request("http://example.com/x", "monkey")
-
-    result = PHTTP.of("x").then do |x|
-      a = PHTTP::Request.new("http://example.com/#{x}").then { |res| res.body }
-      PHTTP.all(a, PHTTP.of("llama"))
-    end.then do |x, y|
-      x + y
-    end
-
-    result.run.should eq "monkeyllama"
-  end
-
-  it "resolves a empty all to an empty array" do
-    stub_request("http://example.com/0", "monkey")
-
-    result = PHTTP.all.then { |x| PHTTP::Request.new("http://example.com/#{x.length}") }.then { |res| res.body }
-
-    result.run.should eq "monkey"
+    expect(response).to eq ["1", "2"]
   end
 end
