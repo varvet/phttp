@@ -4,10 +4,10 @@ require "nio"
 module PHTTP
   class Client
     def initialize(options)
-      @client = HTTP::Client.new(options.merge({
-        socket_class: ::TCPSocket,
-      }))
+      @options = options
     end
+
+    attr_reader :options
 
     def get(uri)
       request(:get, uri) do |response|
@@ -20,7 +20,15 @@ module PHTTP
     end
 
     def request(verb, uri, options = {})
-      response = yield @client.request(verb, uri, options)
+      response = yield client.request(verb, uri, options)
+    end
+
+    private
+
+    def client
+      HTTP::Client.new(options.merge({
+        socket_class: ::TCPSocket,
+      }))
     end
   end
 end
